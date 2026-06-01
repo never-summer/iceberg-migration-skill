@@ -25,7 +25,7 @@ The three sections below describe a workflow that works. You are not required to
 
 ### Reconnaissance (read-only — no writes)
 
-Do all of these. Each is mandatory:
+Work through these — they build on each other; skipping one usually means the migration plan you produce later is incomplete:
 
 1. **Read the mandatory guides** in this skill directory:
    - [S2T_GUIDE.md](./S2T_GUIDE.md) — for table-spec source-of-truth in Hadoop/Spark datamart projects
@@ -109,18 +109,19 @@ Do all of these. Each is mandatory:
 
 ### Present the migration plan and wait for approval
 
-After Phase A, output **one structured plan** to the user using the template below, then **stop and wait for explicit approval**. Do not start writing files.
+After reconnaissance, output **one structured plan** to the user using the template below, then **stop and wait for explicit approval**. Do not start writing files.
 
-The plan **must** start with the Phase A self-check block — it forces you to declare what you actually did vs. skipped. If any item is `n`, you have NOT completed Phase A; do NOT proceed to the rest of the plan. Go back, complete the missing step, then re-emit Phase B.
+The plan opens with a reconnaissance self-check — it forces you to declare what you actually did vs. skipped. An honest `n` on a row is a signal to loop back and fill it in before the user sees the plan, not a hard stop — and if the user has explicitly told you to skip a row (e.g. "this project has no S2T"), that's fine too.
 
 ```
 ## Phase A findings + proposed plan
 
 ### Reconnaissance self-check (verify you covered these)
-- [ ] Read S2T_GUIDE.md (first tool call)                                  y/n
-- [ ] Read ICEBERG_WF_GUIDE.md (second tool call)                          y/n
-- [ ] Read reference.md (third tool call)                                  y/n
-- [ ] Ran detector with --dry-run (paste 2-3 line excerpt of output)       y/n
+- [ ] Read S2T_GUIDE.md                                                    y/n
+- [ ] Read ICEBERG_WF_GUIDE.md                                             y/n
+- [ ] Read reference.md                                                    y/n
+- [ ] Ran I/O site search (rg/grep from Reconnaissance step 2 — paste     y/n
+      hit count for each command or "no matches")
 - [ ] Ran all 5 anti-pattern greps (paste each command + first line of     y/n
       its output OR "no matches"; the 5 commands are: _inc.sql find,
       FULL OUTER JOIN grep, EXCEPT/MINUS grep, tombstone grep, *_changelog find)
@@ -193,11 +194,11 @@ Execute in this fixed order so reviews stay sane:
 6. (If approved) Replace `*_inc.sql` with MERGE INTO + retire `wf_*_inc`.
 7. (Optional) Write a small `iceberg-runbook/` directory by hand: one `phase1_add_files.sql` and one `phase2_rewrite.sql` per migrated table, following the templates in [reference.md § Phased migration runbook](./reference.md#phased-migration-runbook). This used to be auto-generated; in the markdown-only skill you compose them from the templates and the per-table info already captured in the plan.
 
-After Phase C: print a final summary (what was changed, what was created, what was retired) and remind the user to re-run the detector to verify zero residual `STORED AS PARQUET` / `USING parquet` references.
+After applying: print a final summary (what was changed, what was created, what was retired) and remind the user to re-run the `rg`/`grep` recon commands from the Reconnaissance section to verify zero residual `STORED AS PARQUET` / `USING parquet` references.
 
 ---
 
-The three MANDATORY blocks below detail the rules for guides, conf, and pipeline analysis. The workflow gate above is the operational discipline that makes those rules actually apply.
+The three MANDATORY blocks below detail the rules for guides, conf, and pipeline analysis. The suggested workflow above is the operational discipline that makes those rules actually apply.
 
 ## ⚠ MANDATORY — read these two guides before doing anything
 
@@ -316,7 +317,7 @@ Look for build files to determine stack:
 - `build.gradle` / `build.gradle.kts` → **Java/Scala + Gradle**
 - `*.java` / `*.scala` files → JVM project
 
-The skill handles all of these automatically — the detector scans `.py`, `.java`, `.scala` files.
+The skill targets all of these — the Bash recon commands in the Reconnaissance section cover `.py`, `.java`, and `.scala` files.
 
 ### 2. Detect Parquet / ORC / Hive Usage
 
@@ -410,10 +411,10 @@ PARTITIONED BY (
 TBLPROPERTIES (
   'format-version' = '2',
   'write.parquet.compression-codec' = 'zstd'
-  -- MoR vs CoW: ICEBERG_WF_GUIDE does not prescribe a default per table.
-  -- Add 'write.update.mode' / 'write.delete.mode' / 'write.merge.mode' = 'merge-on-read'
-  -- only when the table has row-level UPDATE/DELETE/MERGE — confirm from DML scripts under
-  -- src/main/resources/sql/dml/ before setting these.
+  -- MoR vs CoW: if the user has specified a mode, use it (see "Mode selection — user input
+  -- is ground truth" earlier in this file). Otherwise add the three 'write.{update,delete,merge}.mode'
+  -- = 'merge-on-read' lines only when the table has row-level UPDATE/DELETE/MERGE — confirm
+  -- from DML scripts under src/main/resources/sql/dml/ before setting these.
 );
 ```
 

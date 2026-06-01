@@ -286,7 +286,7 @@ Don't modify any file until the user replies `go` (or specifies changes). That's
 
 ## Phased migration runbook
 
-For each target Iceberg table found in the worklist, the migrator emits a per-table directory under `iceberg-runbook/` containing:
+For each target Iceberg table in the migration plan, the agent should compose (by hand, in the markdown-only skill) a per-table directory under `iceberg-runbook/` containing:
 
 - `migration-plan.md` — phase descriptions, pre-flight checklist, code-sites table, warnings
 - `phase1_add_files.sql` — Spark SQL for `system.add_files` (in-place metadata creation)
@@ -310,10 +310,6 @@ Phase 3 has three switchover patterns. The user picks ONE per stack and comments
 - **OPTION A (Spark VIEW)** — replace old Hive table with a view pointing at Iceberg. Works for SELECT-only consumers; breaks `INSERT INTO` clients.
 - **OPTION B (HMS direct rename)** — atomic at metastore level. Requires admin access.
 - **OPTION C (Application-level rename)** — update each call site in the code per `lakehouse-worklist.json`. Listed in the SQL file as comments.
-
-### Automation
-
-Runbook generation runs alongside worklist generation on every `convert_project`. The `--dry-run` flag suppresses the directory write and prints the runbook contents as a 5th preview section.
 
 ### Limitations
 

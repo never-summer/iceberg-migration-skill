@@ -11,7 +11,7 @@ git clone <this-repo> ~/git/iceberg-migration-skill
 ln -s ~/git/iceberg-migration-skill ~/.claude/skills/iceberg-migration-skill
 ```
 
-Claude Code picks up the skill on the next session start. Invoke it by asking for an Iceberg migration ("convert this project to Iceberg", "migrate parquet to iceberg", "переведи на айсберг" etc.) — the trigger phrases are in `SKILL.md`'s frontmatter `description`.
+Claude Code picks up the skill on the next session start. Invoke it by asking for an Iceberg migration ("convert parquet", "migrate to iceberg", "migrate hive to iceberg" — the full list of triggers is in `SKILL.md`'s frontmatter `description`).
 
 ## What's in the box
 
