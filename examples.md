@@ -1,4 +1,4 @@
-# open-table-migrator — Examples
+# iceberg-migration-skill — Examples
 
 Concrete before/after rewrite tables and the multi-table mapping format.
 Referenced from [SKILL.md](./SKILL.md). Read this when you need to look up

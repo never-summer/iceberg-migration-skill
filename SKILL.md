@@ -1,12 +1,12 @@
 ---
-name: open-table-migrator
+name: iceberg-migration-skill
 description: Convert Parquet/ORC read/write to Apache Iceberg in Python, Java, or Scala projects. Use when the user says "convert parquet", "migrate to iceberg", "parquet to iceberg", "migrate hive to iceberg", "convert orc", "migrate orc to iceberg", or asks to move Hive-parquet tables to Iceberg.
 ---
 
 # Parquet/ORC → Iceberg Conversion Skill
 
 **Announce at start (verbatim, two lines):**
-> "I'm using the open-table-migrator skill to convert this project."
+> "I'm using the iceberg-migration-skill to convert this project."
 > "I will first do a read-only reconnaissance pass (read the four guides, scan for I/O sites + pipeline anti-patterns, locate any existing maintenance wf and Iceberg conf), then present a migration plan and wait for your `go` before modifying files."
 
 ## Recommended order (skip only with good reason)

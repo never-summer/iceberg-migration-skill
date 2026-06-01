@@ -1,4 +1,4 @@
-# open-table-migrator — Reference
+# iceberg-migration-skill — Reference
 
 Deep-dive documentation for each subsystem. Referenced from [SKILL.md](./SKILL.md).
 Read the section relevant to whichever stage you are in (detection, mapping, dry-run,
