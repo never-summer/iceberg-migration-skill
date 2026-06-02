@@ -406,7 +406,12 @@ CREATE TABLE {{datamart_name}}.<table> (
 )
 USING iceberg
 PARTITIONED BY (
-  -- FROM S2T sheet `Partitions` — typically (ctl_loading INT) or part_report_dt
+  -- FROM S2T sheet `Partitions` — typically (ctl_loading INT) or part_report_dt.
+  -- Partition column type is preserved AS-IS from the parquet/S2T side (e.g. if the
+  -- existing parquet partitions by `ctl_validfrom BIGINT`, keep BIGINT — do NOT propose
+  -- a transform like days(...) or a TIMESTAMP cast). Upstream pipelines already produce
+  -- values of the original type, and Phase 1 `add_files` requires partition-type parity
+  -- with the existing parquet. If the user explicitly wants a transform, ask first.
 )
 TBLPROPERTIES (
   'format-version' = '2',

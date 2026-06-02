@@ -168,6 +168,22 @@ When a Spark write site uses `.partitionBy(...)` or `.bucketBy(N, ...)`, the det
 
 Time-based transforms (`year`/`month`/`day`/`hour`) and `truncate(N, col)` are out of MVP scope — Spark uses these through `withColumn(...)` pre-pass + identity partitioning, which would require intra-method data flow.
 
+### Partition column type — preserve as-is, never auto-convert
+
+When the existing parquet partitions by a column whose **physical type doesn't match the value's natural domain** — e.g. `ctl_validfrom BIGINT` holding epoch-ms or a `yyyymmdd` int, `part_dt STRING` holding ISO dates — the Iceberg table **must keep the same column name and the same physical type**. Do not propose:
+
+- type conversions (`BIGINT → TIMESTAMP`, `STRING → DATE`),
+- transform partitions (`days(ctl_validfrom)`, `truncate(8, part_dt)`),
+- renames of the partition column.
+
+Reasons this is a hard rule, not a style preference:
+
+1. **Phase 1 `add_files`** registers existing parquet files into the new Iceberg table without rewriting. It requires the partition column type in the Iceberg schema to match the partition directory layout written by the parquet pipeline. A `BIGINT → TIMESTAMP` change breaks `add_files` outright.
+2. **Upstream producers** (Spark jobs, SQL inserts, change-detection logic in `*_inc.sql` / `*_changes.sql`) already compute and write values of the original type into that column. Changing the Iceberg side without changing every producer in the monorepo is a silent data-corruption path.
+3. **The partition value itself often carries semantics** (e.g. `ctl_loading` as the run-id integer, `ctl_validfrom` as the SCD start-key). Even if the storage type looks suboptimal, it's load-bearing for downstream joins and CDC.
+
+If the user explicitly says "we want to switch to a transform partition / change the type", treat that as a separate, scoped migration (rewrite producers, re-load history, drop and recreate the table) — not part of the parquet→Iceberg cutover. Surface the question to the user; default behavior is preserve.
+
 ### Detection scope
 
 - **Python PySpark** — `df.write.partitionBy/.bucketBy`
