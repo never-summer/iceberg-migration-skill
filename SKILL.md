@@ -2,10 +2,10 @@
 name: iceberg-migration-skill
 description: Convert Parquet/ORC read/write to Apache Iceberg in Python, Java, or Scala projects. Use when the user says "convert parquet", "migrate to iceberg", "parquet to iceberg", "migrate hive to iceberg", "convert orc", "migrate orc to iceberg", or asks to move Hive-parquet tables to Iceberg.
 ---
-
 # Parquet/ORC → Iceberg Conversion Skill
 
 **Announce at start (verbatim, two lines):**
+
 > "I'm using the iceberg-migration-skill to convert this project."
 > "I will first do a read-only reconnaissance pass (read the four guides, scan for I/O sites + pipeline anti-patterns, locate any existing maintenance wf and Iceberg conf), then present a migration plan and wait for your `go` before modifying files."
 
@@ -28,10 +28,10 @@ The three sections below describe a workflow that works. You are not required to
 Work through these — they build on each other; skipping one usually means the migration plan you produce later is incomplete:
 
 1. **Read the mandatory guides** in this skill directory:
+
    - [S2T_GUIDE.md](./S2T_GUIDE.md) — for table-spec source-of-truth in Hadoop/Spark datamart projects
    - [ICEBERG_WF_GUIDE.md](./ICEBERG_WF_GUIDE.md) — for wf/ctl, compaction, Spark conf
    - Skim [examples.md](./examples.md) and [reference.md](./reference.md) for patterns you'll need
-
 2. **Surface I/O sites** with native search. These commands find Parquet/ORC reads, writes, and Hive DDLs — they will produce false positives (matches inside strings, comments). Inspect each match yourself; do not trust hit-counts.
 
    ```bash
@@ -49,8 +49,8 @@ Work through these — they build on each other; skipping one usually means the 
    ```
 
    This is intentionally noisier than the old Python detector — the detector parsed AST and resolved string-formatted paths. With raw search you may catch a `parquet` mentioned in a comment or a log string; read each hit before adding it to the worklist.
-
 3. **Pipeline anti-pattern scan** — explicit commands (run each, save findings for the Phase B report):
+
    ```bash
    # Increment / diff / changelog SQL (-> MERGE / .changes candidates):
    find <project> -type f \( -name "*_inc.sql" -o -name "*_diff*.sql" -o -name "*_changes*.sql" -o -name "*_delta*.sql" \)
@@ -67,25 +67,26 @@ Work through these — they build on each other; skipping one usually means the 
    # Custom changelog/CDC tables (-> table.changes candidates):
    find <project> -type f -name "*_changelog*.sql" -o -name "*_cdc*.sql" -o -name "*_history*.sql"
    ```
-   Full pattern catalogue + caveats: [reference.md § Iceberg-native pipeline optimizations](./reference.md#iceberg-native-pipeline-optimizations).
 
+   Full pattern catalogue + caveats: [reference.md § Iceberg-native pipeline optimizations](./reference.md#iceberg-native-pipeline-optimizations).
 4. **Locate existing maintenance wf** (do NOT invent a name yet):
+
    ```bash
    grep -rn 'rewrite_data_files\|expire_snapshots\|exp_iceberg\|hdfs_care' \
        <project>/src/main/resources/wf/ctl/ <project>/src/main/resources/sql/dml/
    ```
-   Record what you found (or "nothing — will propose in Phase B").
 
+   Record what you found (or "nothing — will propose in Phase B").
 5. **Locate existing Iceberg conf YAML parameter** (do NOT invent a name yet):
+
    ```bash
    grep -rn 'spark.sql.extensions.*IcebergSparkSessionExtensions\|SparkSessionCatalog' \
        <project>/src/main/resources/wf/ <project>/src/main/resources/devops/ \
        <project>/src/main/resources/mart*.yml
    ```
+
    Record what you found.
-
 6. **Locate S2T inputs** — `<project>/src/main/resources/s2t/s2t.xlsx` (or `hadoop_S2T_*.xlsx`), `<project>/src/main/resources/devops/devops.json`, `<project>/src/main/resources/wf/ctl/1_ctl_entities.yml`. Pull `datamart_name`, ТУЗ, yarn queue, per-table `entity_id`. If S2T Excel is unreadable, ask the user — do not invent.
-
 7. **Sibling project Iceberg workflow recon** — find sibling datamart projects in the monorepo that have **already migrated to Iceberg**. Their workflows are the gold-standard reference template — much more useful than the generic templates in `ICEBERG_WF_GUIDE.md`, which describe a structure but cannot capture project-specific naming, parameter sets, lock conventions, schedule cron, or class-path patterns. Do NOT generate a wf from the guide alone — always anchor it to a real working example.
 
    ```bash
@@ -99,11 +100,13 @@ Work through these — they build on each other; skipping one usually means the 
    ```
 
    If matches found:
+
    - Pick 1–2 sibling projects closest to the current one (similar data domain, similar size, similar layer pattern — AUX / HIST / AL / etc.).
    - For one Iceberg table in the chosen sibling: **read the full wf definition** plus its linked DML scripts (`exp_iceberg_*.sql`, `upd_iceberg_*.sql`), the relevant `mart.yml` keys it references, the `1_ctl_entities.yml` entry, and the `devops.json` entry. Trace end-to-end so you know how the pieces fit.
    - In Phase B, record: **"Reference template: `<sibling_project>/wf/ctl/<file>.yml:<line-range>` for table `<t>`"** — and use that as the structural template for your wf in the current project. Adapt names, IDs, paths — preserve structure, parameter ordering, naming convention, lock pattern.
 
    If no matches found:
+
    - State this in Phase B: `"No sibling Iceberg workflow found in monorepo — falling back to generic templates in ICEBERG_WF_GUIDE.md"`.
    - Then use ICEBERG_WF_GUIDE templates as fallback. Flag this to the user — the resulting wf has no project-specific anchor and is more likely to need iteration.
 
@@ -186,6 +189,7 @@ Reply **"go"** to apply this plan as-is. Or list changes/exclusions.
 ### Apply changes (writes) — only after explicit user approval
 
 Execute in this fixed order so reviews stay sane:
+
 1. `mart.yml` — define / reuse the iceberg conf YAML param.
 2. `wf/ctl/*.yml` — maintenance wf + patches to existing wf (`{{mart.<conf>}}` reference, no inlining).
 3. `sql/ddl/<layer>/<table>.sql` — switch to `USING iceberg` + TBLPROPERTIES per S2T.
@@ -205,18 +209,20 @@ The three MANDATORY blocks below detail the rules for guides, conf, and pipeline
 **Before Step 1, you MUST read both of these files. They ship with this skill — same directory as this `SKILL.md`. They override every default below when they conflict, and ignoring them will produce a broken migration.**
 
 - 📖 **[S2T_GUIDE.md](./S2T_GUIDE.md)** — Source-to-Target spec system used in Hadoop/Spark datamart projects. Authoritative for:
+
   - Table specs (sheets `Tables`, `Columns`, `Partitions`, `Indexes`, `Constraints` in `s2t.xlsx` / `hadoop_S2T_*.xlsx`)
   - Column metadata (names, types, nullability, descriptions)
   - DDL is **generated** from S2T, not from existing parquet. Pull schema from `src/main/resources/s2t/s2t.xlsx` (or `hadoop_S2T_<PROJECT>_v<n>.xlsx`), not from `pq.read_schema`.
   - Gherkin feature files (`ift.feature`, `st_skl.feature`) under `src/main/resources/s2t/qaapi/` must be updated with the new table scenarios. ТУЗ (`u_<id>`), очередь yarn, `datamart_name`, `entity_id` come from S2T + `devops.json` + `1_ctl_entities.yml`.
-
 - 📖 **[ICEBERG_WF_GUIDE.md](./ICEBERG_WF_GUIDE.md)** — Oozie-based `wf/ctl/*.yml` workflow system. Authoritative for:
+
   - Required Spark conf for Iceberg (`spark.sql.extensions=...IcebergSparkSessionExtensions`, `spark_catalog.type=hive`, `rewrite.partial-progress.enabled=true`, etc.) — see "Spark-конфигурация для Iceberg" section.
   - Compaction / expire_snapshots / remove_orphan_files run via the project's **maintenance wf**, NOT via standalone Spark jobs. **Locate the existing wf first** — `grep -rn 'rewrite_data_files\|expire_snapshots\|exp_iceberg\|hdfs_care' src/main/resources/wf/ctl/ src/main/resources/sql/dml/`. If found, reuse it (common existing names: `wf_schema_hdfs_care`, `wf_<table>_service`, project-specific variants). If not found, propose a new name following the project's convention — sensible options: `wf_schema_hdfs_care` (shared, one per schema), `wf_<table>_service` (per-table, easier scheduling), or `wf_iceberg_maintenance` (semantic-neutral). Every new Iceberg table needs `exp_iceberg_<table>.sql` and `upd_iceberg_<table>.sql` scripts under `src/main/resources/sql/dml/`.
   - Lock operations through CTL (`init_locks: checks/sets`, `*ctlCheckLockWrite`, `*ctlSetLockRead`).
   - Data-flow layers: `Sources → AUX (Parquet) → HIST (Iceberg) → AL (Iceberg)`. Read this section before deciding what to migrate vs. leave as parquet.
 
 **If a recommendation in this `SKILL.md`, `examples.md`, `reference.md`, or generated `iceberg-runbook/` contradicts these guides, the guides win.** Specifically:
+
 - Phase 2 in the phased runbook prescribes `CALL system.rewrite_data_files(...)` as a standalone call — in datamart projects that use the workflow system described in `ICEBERG_WF_GUIDE.md`, this MUST be wired through the project's maintenance wf (locate via grep first; see ICEBERG_WF_GUIDE "Сценарий 1" = reuse existing, "Сценарий 2" = create new per the project's naming convention).
 - Step 3 "Ask the User for Iceberg Table Details" is **skipped** — the answer comes from `S2T_GUIDE.md` + the project's S2T Excel file.
 - Step 6 "Create the Iceberg Table" — schema comes from S2T Excel, `TBLPROPERTIES` come from `ICEBERG_WF_GUIDE.md`, NOT from inference or interactive prompt.
@@ -234,13 +240,15 @@ For every workflow (`wf/ctl/*.yml`) that reads, writes, or runs any procedure (c
 **Define the flags ONCE as a shared YAML parameter — do NOT inline them per wf.** Inlining means three flags get copy-pasted into every affected wf, drift over time, and the next dev has to remember to add them. The right pattern is:
 
 1. **Search the project first** for an existing shared iceberg-conf parameter:
+
    ```bash
    grep -rn 'spark.sql.extensions.*IcebergSparkSessionExtensions\|SparkSessionCatalog' \
        src/main/resources/wf/ src/main/resources/devops/ src/main/resources/mart*.yml
    ```
-   Typical existing names: `spark_submit_cmd_iceberg_service` (from `ICEBERG_WF_GUIDE.md`), `spark_iceberg`, `iceberg_conf`, project-specific. If found → reference it as `{{mart.<name>}}` in every affected wf's `spark_submit_cmd`. **Use the name that already exists, don't rename it.**
 
+   Typical existing names: `spark_submit_cmd_iceberg_service` (from `ICEBERG_WF_GUIDE.md`), `spark_iceberg`, `iceberg_conf`, project-specific. If found → reference it as `{{mart.<name>}}` in every affected wf's `spark_submit_cmd`. **Use the name that already exists, don't rename it.**
 2. **If not found**, define a new shared parameter in `src/main/resources/mart.yml` (or the project's equivalent shared-config file). Propose 2–3 naming candidates to the user before adding — sensible options: `spark_iceberg` (short), `iceberg_conf` (semantic), `spark_submit_cmd_iceberg_service` (matches ICEBERG_WF_GUIDE convention). Example:
+
    ```yaml
    # src/main/resources/mart.yml (or shared config)
    spark_iceberg: >
@@ -248,7 +256,9 @@ For every workflow (`wf/ctl/*.yml`) that reads, writes, or runs any procedure (c
      --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog
      --conf spark.sql.catalog.spark_catalog.type=hive
    ```
+
    Then reference from every affected wf:
+
    ```yaml
    - param:
        name: spark_submit_cmd
@@ -256,6 +266,7 @@ For every workflow (`wf/ctl/*.yml`) that reads, writes, or runs any procedure (c
    ```
 
 **Where to apply the reference (every place that touches a migrated table):**
+
 - New per-table service wf (whatever name the maintenance wf has — see above) → `spark_submit_cmd` references `{{mart.<iceberg_conf_name>}}`.
 - Existing wf that previously read/wrote the parquet table → patch its `spark_submit_cmd` to also reference `{{mart.<iceberg_conf_name>}}`. **Do not leave the old wf untouched** — same wf, new table format means new conf.
 - Ad-hoc `spark-submit` in CI/CD or local runs → same three flags inline (no YAML there, so duplication is unavoidable).
@@ -269,16 +280,17 @@ Confirm in your announce that both guides were read AND that you will either reu
 
 The skill rewrites individual call sites. But Iceberg unlocks pipeline-level simplifications that Parquet does not. **Before producing the worklist, scan the project for the patterns below and surface a concrete proposal to the user** rather than mechanically translating existing parquet-era SQL.
 
-| Anti-pattern in the Parquet pipeline | Iceberg-native replacement | Why |
-|---|---|---|
-| Custom "increment" SQL (`*_inc.sql`, `*_diff*.sql`, `*_changes*.sql`, `*_delta*.sql`) joining today's snapshot with yesterday's to detect inserts / updates / deletes | `MERGE INTO target USING source ON ...`<br>`WHEN NOT MATCHED THEN INSERT *`<br>`WHEN MATCHED AND (src.attr <> tgt.attr OR ...) THEN UPDATE SET *`<br>`WHEN NOT MATCHED BY SOURCE THEN DELETE` | One statement does insert/update/delete atomically; no manual full-outer-join, no snapshot CTEs. |
-| Reading "current" + "previous" snapshot and diffing them to emit change events downstream | `SELECT _change_type, * FROM target.changes` (Iceberg changelog scan) | `_change_type` is `INSERT`/`DELETE`/`UPDATE_BEFORE`/`UPDATE_AFTER` — Iceberg tracks this at the metadata layer, no diff query needed. |
-| Manual tombstone columns (`is_deleted`, `deleted_at`) used because parquet has no row-level delete | MoR + `format-version=2` + `write.delete.mode=merge-on-read` + ordinary `DELETE FROM` | Iceberg deletes rows natively (position/equality deletes); the tombstone column becomes redundant. |
-| Full-partition rewrite for late-arriving data | `MERGE INTO ... ON tgt.part_dt BETWEEN ... AND ...` (partition-aware MERGE) | Iceberg writes only affected files; old data files remain. |
+| Anti-pattern in the Parquet pipeline                                                                                                                                          | Iceberg-native replacement                                                                                                                                                                            | Why                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Custom "increment" SQL (`*_inc.sql`, `*_diff*.sql`, `*_changes*.sql`, `*_delta*.sql`) joining today's snapshot with yesterday's to detect inserts / updates / deletes | `MERGE INTO target USING source ON ...<br>``WHEN NOT MATCHED THEN INSERT *<br>``WHEN MATCHED AND (src.attr <> tgt.attr OR ...) THEN UPDATE SET *<br>``WHEN NOT MATCHED BY SOURCE THEN DELETE` | One statement does insert/update/delete atomically; no manual full-outer-join, no snapshot CTEs.                                                 |
+| Reading "current" + "previous" snapshot and diffing them to emit change events downstream                                                                                     | `SELECT _change_type, * FROM target.changes` (Iceberg changelog scan)                                                                                                                               | `_change_type` is `INSERT`/`DELETE`/`UPDATE_BEFORE`/`UPDATE_AFTER` — Iceberg tracks this at the metadata layer, no diff query needed. |
+| Manual tombstone columns (`is_deleted`, `deleted_at`) used because parquet has no row-level delete                                                                        | MoR +`format-version=2` + `write.delete.mode=merge-on-read` + ordinary `DELETE FROM`                                                                                                            | Iceberg deletes rows natively (position/equality deletes); the tombstone column becomes redundant.                                               |
+| Full-partition rewrite for late-arriving data                                                                                                                                 | `MERGE INTO ... ON tgt.part_dt BETWEEN ... AND ...` (partition-aware MERGE)                                                                                                                         | Iceberg writes only affected files; old data files remain.                                                                                       |
 
 **Detection signals:** SQL files named `*_inc.sql` / `*_diff*` / `*_changes*` / `*_delta*`, `FULL OUTER JOIN` / `LEFT JOIN ... WHERE x.id IS NULL` between two snapshots of the same logical table, `EXCEPT` / `MINUS` between filtered slices of the same source, or `WITH today AS (...), yesterday AS (...)` CTE pattern.
 
 **Workflow:**
+
 1. List each detected anti-pattern with file:line + the canonical replacement.
 2. Ask the user to confirm before rewriting — they may have business reasons to keep the explicit increment logic (audit trail, downstream contract).
 3. If the user accepts the MERGE-based rewrite, also propose retiring the now-redundant `*_inc.sql` and its `wf_*_inc` workflow entry — they would otherwise keep computing diffs against a table whose history is already in `.changes`.
@@ -312,6 +324,7 @@ Beyond them, **also look for any `*_GUIDE.md` files at the project root of the p
 ### 1. Identify Project Type
 
 Look for build files to determine stack:
+
 - `requirements.txt` / `pyproject.toml` → **Python**
 - `pom.xml` → **Java + Maven**
 - `build.gradle` / `build.gradle.kts` → **Java/Scala + Gradle**
@@ -324,6 +337,7 @@ The skill targets all of these — the Bash recon commands in the Reconnaissance
 Read source files and identify patterns. The skill scans for **both Parquet and ORC** and covers the Spark/pandas/pyarrow idioms below.
 
 **Python:**
+
 - pandas: `pd.read_parquet(...)` / `pd.read_orc(...)` / `.to_parquet(...)` / `.to_orc(...)`
 - PySpark batch: `spark.read.parquet|orc(...)` / `df.write.parquet|orc(...)`
 - PySpark generic: `spark.read.format("parquet"|"orc").load(...)` / `df.write.format(...).save(...)`
@@ -334,6 +348,7 @@ Read source files and identify patterns. The skill scans for **both Parquet and 
 - SparkSQL via `spark.sql(...)`: `STORED AS PARQUET|ORC`, `USING parquet|orc`, `INSERT INTO|OVERWRITE TABLE`
 
 **Java:**
+
 - Batch: `spark.read().parquet|orc(...)` / `df.write()...parquet|orc(...)`
 - Generic: `spark.read().format("parquet"|"orc").load(...)` / `df.write()...format(...).save(...)`
 - Streaming *(warn-only)*: `readStream()....`, `writeStream()....`
@@ -400,6 +415,8 @@ Concrete:
 
 1. Generate / regenerate DDL from `s2t.xlsx` per S2T_GUIDE "Контрольный список перед запуском" (the DDL generator step that turns S2T into `src/main/resources/sql/ddl/<layer>/<table>.sql`). Then change `STORED AS PARQUET` → `USING iceberg`.
 
+**MoR (merge-on-read)** — для таблиц с UPDATE / DELETE / MERGE:
+
 ```sql
 CREATE TABLE {{datamart_name}}.<table> (
   -- columns FROM S2T sheet `Columns` — types/nullability AS-IS from S2T
@@ -414,16 +431,42 @@ PARTITIONED BY (
   -- with the existing parquet. If the user explicitly wants a transform, ask first.
 )
 TBLPROPERTIES (
-  'format-version' = '2',
-  'write.parquet.compression-codec' = 'zstd'
-  -- MoR vs CoW: if the user has specified a mode, use it (see "Mode selection — user input
-  -- is ground truth" earlier in this file). Otherwise add the three 'write.{update,delete,merge}.mode'
-  -- = 'merge-on-read' lines only when the table has row-level UPDATE/DELETE/MERGE — confirm
-  -- from DML scripts under src/main/resources/sql/dml/ before setting these.
+  'format-version'                   = '2',
+  'write.parquet.compression-codec'  = 'zstd',
+  'write.update.mode'                = 'merge-on-read',
+  'write.delete.mode'                = 'merge-on-read',
+  'write.merge.mode'                 = 'merge-on-read'
 );
 ```
 
+**CoW (copy-on-write)** — для таблиц без row-level мутаций (только INSERT / overwrite):
+
+```sql
+CREATE TABLE {{datamart_name}}.<table> (
+  -- columns FROM S2T sheet `Columns` — types/nullability AS-IS from S2T
+)
+USING iceberg
+PARTITIONED BY (
+  -- FROM S2T sheet `Partitions` — typically (ctl_loading INT) or part_report_dt.
+  -- Partition column type is preserved AS-IS from the parquet/S2T side (e.g. if the
+  -- existing parquet partitions by `ctl_validfrom BIGINT`, keep BIGINT — do NOT propose
+  -- a transform like days(...) or a TIMESTAMP cast). Upstream pipelines already produce
+  -- values of the original type, and Phase 1 `add_files` requires partition-type parity
+  -- with the existing parquet. If the user explicitly wants a transform, ask first.
+)
+TBLPROPERTIES (
+  'format-version'                   = '2',
+  'write.parquet.compression-codec'  = 'zstd',
+  'write.update.mode'                = 'copy-on-write',
+  'write.delete.mode'                = 'copy-on-write',
+  'write.merge.mode'                 = 'copy-on-write'
+);
+```
+
+Mode selection rule: if the user has explicitly named a mode — use it (see "Mode selection — user input is ground truth" earlier in this file). Otherwise: MoR if DML scripts contain `UPDATE`/`DELETE FROM`/`MERGE INTO`, CoW otherwise. Always write all three `write.*.mode` properties explicitly — never rely on the Iceberg default, as it differs between format versions and catalog implementations.
+
 2. Wire the table into compaction per [ICEBERG_WF_GUIDE.md](./ICEBERG_WF_GUIDE.md) — this is **not optional**:
+
    - Create `src/main/resources/sql/dml/exp_iceberg_<table>.sql` (expire_snapshots) — template in ICEBERG_WF_GUIDE "Expire snapshots only".
    - Create `src/main/resources/sql/dml/upd_iceberg_<table>.sql` (full cycle) — **template choice depends on mode**:
      - **MoR table** (`write.delete.mode=merge-on-read`): use the MoR-aware template — "Полный цикл обслуживания для MoR-таблиц" in ICEBERG_WF_GUIDE. It adds `delete-file-threshold` to `rewrite_data_files`, plus `rewrite_position_delete_files` and `rewrite_manifests` calls. **Required for MoR** — without it, position-delete files accumulate, reads degrade silently.
@@ -431,7 +474,6 @@ TBLPROPERTIES (
    - Using the CoW template on a MoR table is a silent footgun. The Phase B plan table records the chosen mode per table; cross-check it here.
    - Add the two `spark_driver_extraJavaOptions__hdfs_care_*` params for the table to the **project's existing maintenance wf** in `src/main/resources/wf/ctl/`. Find it first: `grep -rn 'rewrite_data_files\|expire_snapshots\|exp_iceberg\|hdfs_care' src/main/resources/wf/ctl/`. Common names that may already exist: `wf_schema_hdfs_care`, `wf_<table>_service`, or a project-specific variant. If nothing found, follow ICEBERG_WF_GUIDE "Сценарий 2: Создай отдельный wf для таблицы" and pick a name matching the project's convention — propose 2–3 candidates to the user (`wf_<table>_service` for per-table, `wf_schema_hdfs_care` / `wf_iceberg_maintenance` for shared) and confirm before creating.
    - Use `entity_id` captured in Step 3.
-
 3. Update the Gherkin scenario (`ift.feature` / `st_skl.feature`) per S2T_GUIDE "Шаг 4: Добавь сценарий в Gherkin-файл" — add the new table to the DDL check sub-scenarios.
 
 The `iceberg-runbook/<ns>.<table>/phase2_rewrite.sql` emitted by the migrator is a **template** — in such projects, replace standalone execution with the project's maintenance wf wiring described above. Phase 1 (`add_files`) and Phase 3 (switchover) still apply.
@@ -441,21 +483,25 @@ For the rest of the phased rollout (Phase 1 `add_files`, Phase 3 switchover opti
 ### 7. Run Existing Tests
 
 **Python** (install pyiceberg in the project's own venv or per the project's dependency instructions, then):
+
 ```bash
 pytest tests/ -v
 ```
 
 **Java/Maven:**
+
 ```bash
 mvn test
 ```
 
 **Scala/Gradle:**
+
 ```bash
 ./gradlew test
 ```
 
 Common test failures:
+
 - Tests use `tmp_path` for parquet file path but Iceberg catalog uses a fixed URI — inject catalog via fixture
 - Assertions on file existence (`Path("data.parquet").exists()`) — replace with table existence checks
 
