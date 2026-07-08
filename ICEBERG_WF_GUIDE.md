@@ -1,6 +1,7 @@
 # 📘 Инструкция по работе с Iceberg в wf/ctl
 
 ## Содержание
+
 1. [Общая архитектура](#общая-архитектура)
 2. [Параметры для Iceberg в wf/ctl](#параметры-для-iceberg)
 3. [Структура ctl-файлов](#структура-ctl-файлов)
@@ -12,6 +13,7 @@
 ## Общая архитектура
 
 ### Слои проекта
+
 ```
 src/main/resources/
 ├── wf/
@@ -24,6 +26,7 @@ src/main/resources/
 ```
 
 ### Поток данных
+
 ```
 Sources → AUX (Parquet) → HIST (Iceberg) → AL (Iceberg)
                 ↓              ↓                ↓
@@ -180,6 +183,7 @@ grep -A 50 "wf_schema_hdfs_care" src/main/resources/wf/ctl/ctl.yml
 ```
 
 В этом wf уже настроены скрипты для:
+
 - `t_pfm_agr_bal`
 - `t_pfm_agr_bal_json`
 - `t_pfm_ecod_account_daily`
@@ -205,6 +209,7 @@ ls -la src/main/resources/sql/dml/ | grep -E "exp_iceberg|upd_iceberg"
 ```
 
 Скрипты должны называться:
+
 - `exp_iceberg_<table_name>.sql` — для `expire_snapshots`
 - `upd_iceberg_<table_name>.sql` — для `rewrite_data_files` + `remove_orphan_files`
 
@@ -258,7 +263,7 @@ CALL spark_catalog.system.expire_snapshots(
 
 CALL spark_catalog.system.rewrite_data_files(
   table => '<schema>.<table_name>',
-  where => 'part_report_dt >= ${app.sql.service_date_from}',
+  where => '<partition_column> >= ${app.sql.service_date_from}',  -- substitute THIS table's real partition column (from its PARTITIONED BY, same as sort_order below); carrying the template's part_report_dt onto a table partitioned otherwise makes rewrite error or silently no-op
   strategy => 'sort',
   sort_order => '<partition_column> asc nulls last',
   options => map(
@@ -343,6 +348,7 @@ grep -A 5 "t_agr_news" src/main/resources/wf/ctl/1_ctl_entities.yml
 ## Шаблоны скриптов
 
 ### Expire snapshots only
+
 ```sql
 set safe_date = (select cast(date_sub(current_date,${app.sql.safe_days}) as timestamp));
 
@@ -353,6 +359,7 @@ CALL spark_catalog.system.expire_snapshots(
 ```
 
 ### Полный цикл обслуживания (для CoW-таблиц)
+
 Используй этот шаблон для таблиц **без** row-level UPDATE / DELETE / MERGE (Copy-on-Write по умолчанию).
 
 ```sql
@@ -368,7 +375,7 @@ CALL spark_catalog.system.expire_snapshots(
 -- Rewrite data files
 CALL spark_catalog.system.rewrite_data_files(
   table => '<schema>.<table_name>',
-  where => 'part_report_dt >= ${app.sql.service_date_from}',
+  where => '<partition_column> >= ${app.sql.service_date_from}',  -- substitute THIS table's real partition column (from its PARTITIONED BY, same as sort_order below); carrying the template's part_report_dt onto a table partitioned otherwise makes rewrite error or silently no-op
   strategy => 'sort',
   sort_order => '<partition_column> asc nulls last',
   options => map(
@@ -400,7 +407,7 @@ CALL spark_catalog.system.expire_snapshots(
 -- Rewrite data files with MoR-aware option: rewrite files that have >= 2 associated deletes
 CALL spark_catalog.system.rewrite_data_files(
   table => '<schema>.<table_name>',
-  where => 'part_report_dt >= ${app.sql.service_date_from}',
+  where => '<partition_column> >= ${app.sql.service_date_from}',  -- substitute THIS table's real partition column (from its PARTITIONED BY, same as sort_order below); carrying the template's part_report_dt onto a table partitioned otherwise makes rewrite error or silently no-op
   strategy => 'sort',
   sort_order => '<partition_column> asc nulls last',
   options => map(
@@ -435,6 +442,7 @@ CALL spark_catalog.system.remove_orphan_files(
 | Low-volume | `0 22 * * 0` | Еженедельно |
 
 **Параметры:**
+
 - `app.sql.safe_days = 2` — хранить минимум 2 дня
 - `app.sql.retain_snapshots = 10` — хранить минимум 10 snapshot'ов
 
