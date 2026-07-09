@@ -13,6 +13,9 @@ The skill rewrites **code**, not the operational model of the tables. After the 
 MoR/CoW is a **table property**, not a code choice. `INSERT` / `append` / `overwritePartitions()` are unaffected — the mode only changes how `UPDATE` / `DELETE` / `MERGE INTO` materialize changes.
 
 ```sql
+-- ⚠ Mode-switch snippet ONLY (existing Iceberg table changing mode).
+-- For CREATE TABLE / migration DDL this 4-key block is INCOMPLETE — use the full
+-- 11-property canonical block: ICEBERG_WF_GUIDE.md § "DDL: full TBLPROPERTIES template".
 ALTER TABLE ns.events SET TBLPROPERTIES (
   'format-version'       = '2',               -- required for MoR
   'write.update.mode'    = 'merge-on-read',   -- or 'copy-on-write'

@@ -1,7 +1,6 @@
 # 📘 Инструкция по работе с Iceberg в wf/ctl
 
 ## Содержание
-
 1. [Общая архитектура](#общая-архитектура)
 2. [Параметры для Iceberg в wf/ctl](#параметры-для-iceberg)
 3. [Структура ctl-файлов](#структура-ctl-файлов)
@@ -13,7 +12,6 @@
 ## Общая архитектура
 
 ### Слои проекта
-
 ```
 src/main/resources/
 ├── wf/
@@ -26,7 +24,6 @@ src/main/resources/
 ```
 
 ### Поток данных
-
 ```
 Sources → AUX (Parquet) → HIST (Iceberg) → AL (Iceberg)
                 ↓              ↓                ↓
@@ -183,7 +180,6 @@ grep -A 50 "wf_schema_hdfs_care" src/main/resources/wf/ctl/ctl.yml
 ```
 
 В этом wf уже настроены скрипты для:
-
 - `t_pfm_agr_bal`
 - `t_pfm_agr_bal_json`
 - `t_pfm_ecod_account_daily`
@@ -209,7 +205,6 @@ ls -la src/main/resources/sql/dml/ | grep -E "exp_iceberg|upd_iceberg"
 ```
 
 Скрипты должны называться:
-
 - `exp_iceberg_<table_name>.sql` — для `expire_snapshots`
 - `upd_iceberg_<table_name>.sql` — для `rewrite_data_files` + `remove_orphan_files`
 
@@ -348,7 +343,6 @@ grep -A 5 "t_agr_news" src/main/resources/wf/ctl/1_ctl_entities.yml
 ## Шаблоны скриптов
 
 ### Expire snapshots only
-
 ```sql
 set safe_date = (select cast(date_sub(current_date,${app.sql.safe_days}) as timestamp));
 
@@ -359,7 +353,6 @@ CALL spark_catalog.system.expire_snapshots(
 ```
 
 ### Полный цикл обслуживания (для CoW-таблиц)
-
 Используй этот шаблон для таблиц **без** row-level UPDATE / DELETE / MERGE (Copy-on-Write по умолчанию).
 
 ```sql
@@ -442,7 +435,6 @@ CALL spark_catalog.system.remove_orphan_files(
 | Low-volume | `0 22 * * 0` | Еженедельно |
 
 **Параметры:**
-
 - `app.sql.safe_days = 2` — хранить минимум 2 дня
 - `app.sql.retain_snapshots = 10` — хранить минимум 10 snapshot'ов
 
@@ -487,3 +479,57 @@ grep -A 30 "CREATE TABLE.*<table_name>" src/main/resources/sql/ddl/<layer>/
 # Найти DML для таблицы
 ls -la src/main/resources/sql/dml/ | grep -i <table_name>
 ```
+
+## DDL: full TBLPROPERTIES template and per-property sourcing rules (canonical)
+
+This is the canonical DDL property block the skill points at (its DDL step and its TBLPROPERTIES-completeness probe). Every migrated table's DDL uses the full block (11 properties); the reference table under it explains how to source each value — pasting one fixed value across all tables is the mistake it prevents.
+
+Generate / regenerate the DDL from `s2t.xlsx` per S2T_GUIDE "Контрольный список перед запуском" (the DDL generator step that turns S2T into `src/main/resources/sql/ddl/<layer>/<table>.sql`), then change `STORED AS PARQUET` → `USING iceberg`:
+
+```sql
+CREATE TABLE {{datamart_name}}.<table> (
+  -- columns FROM S2T sheet `Columns` — types/nullability AS-IS from S2T
+)
+USING iceberg
+PARTITIONED BY (
+  -- FROM S2T sheet `Partitions` — typically (ctl_loading INT) or part_report_dt.
+  -- Partition column type is preserved AS-IS from the parquet/S2T side (e.g. if the
+  -- existing parquet partitions by `ctl_validfrom BIGINT`, keep BIGINT — do NOT propose
+  -- a transform like days(...) or a TIMESTAMP cast). Upstream pipelines already produce
+  -- values of the original type, and Phase 1 `add_files` requires partition-type parity
+  -- with the existing parquet. If the user explicitly wants a transform, ask first.
+)
+TBLPROPERTIES (
+  'format-version'                            = '2',
+  'write.format.default'                      = 'parquet',
+  'write.parquet.compression-codec'           = '<codec>',         -- see table below — do not default blindly
+  'write.target-file-size-bytes'              = '<bytes>',         -- see table below — do not hardcode a project-wide constant
+  'write.distribution-mode'                   = 'none',
+  'write.update.mode'                          = 'merge-on-read',  -- or 'copy-on-write' — all three mode keys MUST agree (never mixed)
+  'write.delete.mode'                          = 'merge-on-read',
+  'write.merge.mode'                           = 'merge-on-read',
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max'       = '10',
+  'comment'                                    = '<from S2T Tables sheet Description column, verbatim — never invent>'
+  -- 'write.bloom.filter.columns'              = '<col>',          -- OPTIONAL, never hardcode — see table below
+);
+```
+
+**Use the full block above as the default for every migrated table — do not strip it down to just `format-version` + the three `write.*.mode` lines.** Those four are the only ones that are *always* mandatory, but that does not make the other six optional: `write.format.default`, `write.parquet.compression-codec`, `write.target-file-size-bytes`, `write.distribution-mode`, `write.metadata.delete-after-commit.enabled`, and `write.metadata.previous-versions-max` are **defaults you include on every table unless you have a specific, stated reason to omit one** — "I was in a hurry" is not such a reason. A DDL that only has `format-version` + the three modes is a sign you under-applied this section, not a valid minimal migration. Only `write.bloom.filter.columns` is genuinely conditional — omit it when no column qualifies (see its row below). `comment` should be included for every table too; its only caveat is sourcing (pull from S2T, never invent), not whether to include it at all.
+
+**Property reference — what each line means and how to decide its value.** Skipping the reasoning column and pasting a fixed value across every table (e.g. copying `'gzip'` or `'ctl_validfrom'` from one table's example into another) is exactly the mistake this section exists to prevent.
+
+| Property | Include by default? | How to determine the value |
+|---|---|---|
+| `format-version` | Always | `'2'` |
+| `write.update.mode` / `write.delete.mode` / `write.merge.mode` | Always, all three together | MoR or CoW — all three set together to the same mode, never mixed. MoR only for tables with pre-existing row-level UPDATE/DELETE/MERGE in the pipeline; append/SCD-versioned/overwrite/log tables are CoW (or stay Parquet). |
+| `write.format.default` | Default — omit only with a stated reason | `'parquet'` — stable across the project, safe to always include. |
+| `write.parquet.compression-codec` | Default — omit only with a stated reason | **Check the sibling project's Iceberg DDL first** (`grep -rn "compression-codec" <sibling>/sql/ddl/`) and reuse whatever codec it already runs in production — that's a real, validated choice. Only fall back to a skill default (`'zstd'`) when no sibling exists. Do not assume the old Hive `PARQUET.COMPRESS` value transfers (e.g. `SNAPPY` pre-migration does not imply `snappy` post-migration) and do not copy a codec from an unrelated example table. |
+| `write.target-file-size-bytes` | Default — omit only with a stated reason | **Do not hardcode one number for the whole project.** First check the sibling project's convention. If none, reuse the `target-file-size-bytes` value already chosen for *this table's* `upd_iceberg_<table>.sql` compaction script (the maintenance templates in this guide default to `134217728` = 128 MiB) so write-time and compaction-time targets agree — picking different numbers for the two means compaction immediately starts rewriting freshly-written files. Scale up (256–512 MiB) for large append-heavy fact tables, down (64 MiB) for small slowly-growing dimension tables, based on existing parquet file sizes for that table (`hdfs dfs -du` or existing partition stats) — state the chosen size and why in the plan, don't silently pick a default. |
+| `write.distribution-mode` | Default — omit only with a stated reason | `'none'` is the safe default when upstream already writes one file per partition reasonably. Switch to `'hash'` only if you observe many small files per partition in the existing parquet layout — confirm with the user first, since it changes write-time shuffle cost. |
+| `write.metadata.delete-after-commit.enabled` | Default — omit only with a stated reason | `'true'` — without it `metadata.json` files accumulate forever; safe to always set. |
+| `write.metadata.previous-versions-max` | Default — omit only with a stated reason | `'10'` — keep this numerically aligned with `app.sql.retain_snapshots` in the table's compaction wf (the maintenance templates in this guide also default to `10`); if you change one, change the other. |
+| `write.bloom.filter.columns` | **Never default — set only when justified per table** | Set this **only** when the table has an obvious high-cardinality equality-lookup column: the join key used in a `MERGE INTO ... ON` writing to this table or the `sort_order` column already chosen for *this table's* `upd_iceberg_<table>.sql`. Derive it from that table's own DML/sort_order — never copy a column name from a different table's example (e.g. `ctl_validfrom` is only relevant if this table's compaction script actually sorts/filters by it). If no single column stands out as the dominant filter/join key, omit the property entirely rather than guessing. |
+| `comment` | Default — omit only with a stated reason | Pull verbatim from the `Description` column of the S2T `Tables` sheet for this table. Never invent one. |
+
+**Post-write sanity check:** after writing each table's DDL, count the `write.*`/`format-version`/`comment` keys actually present in the `TBLPROPERTIES` block. Fewer than 11 (`format-version` + the 3 `write.*.mode` keys + the other 7 "Default" rows including `comment` — i.e. everything except the one "Never default" row, `write.bloom.filter.columns`) means you likely fell back to the bare minimum — go back and fill in the missing defaults, or write down the specific reason you're omitting each one.
