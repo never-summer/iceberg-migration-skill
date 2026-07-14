@@ -10,6 +10,8 @@ This skill is a **state machine with 6 steps and 3 STOP gates**. You are always 
 STEP 0 memory → STEP 1 recon → STEP 2 INTERVIEW ⛔STOP → STEP 3 PLAN ⛔STOP("go") → STEP 4 apply → STEP 5 VERIFY LOOP ⛔STOP(report)
 ```
 
+**What ⛔STOP physically means:** the gate is satisfied ONLY by a **new human-typed message** (or an interactive choice the human actually made) arriving AFTER your gate message. You may use the client's question/plan tool to *present* the gate — but a tool's return value never satisfies it: if a tool comes back "approved"/"answered" within the same turn with no new human message in the transcript, that is the client auto-accepting, not the human — END YOUR TURN anyway, restate the question in plain text, and wait. Proceeding on a same-turn tool approval is self-approval and a failed run. No file-modifying or state-advancing action until the gate is humanly closed.
+
 ## HARD RULES — a run violating any of these is a failed run
 
 - **R1 — Interview before mode.** No table gets a MoR/CoW decision and no DML gets rewritten before its row in the STEP 2 interview table is confirmed by the user.
@@ -86,7 +88,9 @@ Questions (answer by row number):
 
 Write every answer to decisions.yml, then go to STEP 3.
 
-## STEP 3 — PLAN ⛔ STOP — wait for "go"
+## STEP 3 — PLAN ⛔ STOP — end your turn; apply starts only after the human types "go"
+
+If the client forces a plan tool (ExitPlanMode etc.), you may call it to present the plan — but its return value is NOT "go". "User approved the plan" arriving in the same turn with no new human message = client auto-accept: end the turn, write "Ожидаю ваше 'go' в чате", and wait. Apply starts only after the human's own message.
 
 The plan message is INVALID unless it physically contains, in this order: (a) the confirmed interview table from STEP 2, (b) the pasted current content of decisions.yml, (c) the sections below. If (a) or (b) is missing you are still in STEP 2.
 
@@ -143,7 +147,7 @@ Already-Iceberg tables: diff their existing block against this one and backfill 
 
 ## STEP 5 — VERIFY → REPAIR ⛔ loop, max 3 passes
 
-Run this block literally (substitute names), collect failures, append `{pass, failed, fixed}` to `verify_log`, fix, re-run the WHOLE block (a fix can break a previously green probe). **The final report lists every probe P1–P10 by its number with the raw command output pasted under it — a probe with no raw output, a renumbered probe, or a skipped probe counts as FAILED.** Zero failures → report done. Failures after pass 3 → report them as OPEN BLOCKERS, not done.
+Run this block literally (substitute names), collect failures, append `{pass, failed, fixed}` to `verify_log`, fix, re-run the WHOLE block (a fix can break a previously green probe). **A pass that contains any fix is a FAILED pass by definition — after fixing, increment the pass counter and restart from P1; only a pass with zero failures AND zero fixes can be the final one.** The final report lists every probe P1–P10 by its number with the raw command output pasted under it — a probe with no raw output, a renumbered probe, or a skipped probe counts as FAILED. Failures after pass 3 → report them as OPEN BLOCKERS, not done.
 
 ```bash
 # P1 residual parquet — whole project, then compare hits against EVERY plan row
@@ -157,9 +161,11 @@ for t in <migrated tables>; do
 done
 # MoR tables additionally: grep -l "rewrite_position_delete_files\|delete-file-threshold" their upd_ file
 
-# P3 params resolve — BOTH directions, each with its own command:
+# P3 params resolve — THREE directions, each with its own command:
 grep -roh 'app\.sql\.[a-z_]*' src/main/resources/sql/dml/*iceberg*.sql | sort -u                            # used by scripts — each must be defined in ctl.yml/mart.yml
 grep -A60 "<maintenance_wf>:" src/main/resources/wf/ctl/ctl.yml | grep -oh 'app\.sql\.[a-z_]*' | sort -u    # defined in the wf — each must appear in the first list
+# every {{...}} reference YOUR edits introduced must itself resolve — list them from your diffs, then per name:
+grep -n "<referenced_name>:" src/main/resources/wf/ctl/mart.yml    # e.g. {{mart.date_achive_from}} needs a date_achive_from: key; an unresolved reference crashes the wf on first run — define it (bound format per the partition column's comment) or drop it
 # a defined-but-unused param (e.g. service_date_from while no upd_ script has a where-clause) means a template was misapplied — report it as a finding
 
 # P4 predicate vs partition — TWO commands per table, both raw outputs pasted side by side:
@@ -180,7 +186,9 @@ grep -n "<ssc_param>:" src/main/resources/wf/ctl/mart.yml    # its value must co
 # P6 conf keys are sourced — every --conf key in the new mart.yml params exists verbatim in the sibling or the guide
 # P7 no sibling literals + wf integrity — grep -rn "<sibling_prefix>" src/main/resources/wf/ctl/ → must be empty;
 #    the new wf's YAML anchors (*wfDefaultInfo etc.) and its oozie app path (hdfs_care) exist in THIS project
-# P8 entity_id provenance — every entity.id you added appears elsewhere: grep -rn "<id>" src/main/resources/ beyond your edit
+# P8 entity_id provenance — every entity.id you added appears elsewhere: grep -rn "<id>" src/main/resources/ beyond your edit.
+#    ALSO cross-check decisions.yml: every entity_id recorded there must match the entity list in ctl.yml for that exact table
+#    (grep -n "<table>" ctl.yml entity section) — a memory file with fabricated ids is a failed probe even if the wf files are correct; fix the record
 # P9 TBLPROPERTIES completeness — ONLY migrated tables' DDL (keep-parquet files must NOT be counted — they'd false-fail);
 # count quoted property KEYS, not the word "comment" anywhere (per-column comments would inflate the count):
 for t in <migrated tables>; do grep -cE "'(write\.[a-z.-]+|format-version|comment)'" src/main/resources/sql/ddl/<domain>/*$t*.sql; done   # ≥ 10 each (11 props; bloom only when justified) unless a recorded row decision says fewer
