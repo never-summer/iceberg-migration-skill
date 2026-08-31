@@ -24,12 +24,13 @@ ALTER TABLE ns.events SET TBLPROPERTIES (
 );
 ```
 
-| | Copy-on-Write (default pre-v2) | Merge-on-Read (v2) |
-|---|---|---|
-| What is written on UPDATE/DELETE | Fully rewritten data files | Original files + position/equality delete files |
-| Write latency | High (rewrite partition) | Low |
-| Read latency | Low | Higher — reader applies deletes on the fly |
-| Use when | Rare updates, read-heavy analytics | Frequent upserts, CDC, streaming |
+
+|                                  | Copy-on-Write (default pre-v2)     | Merge-on-Read (v2)                              |
+| ---------------------------------- | ------------------------------------ | ------------------------------------------------- |
+| What is written on UPDATE/DELETE | Fully rewritten data files         | Original files + position/equality delete files |
+| Write latency                    | High (rewrite partition)           | Low                                             |
+| Read latency                     | Low                                | Higher — reader applies deletes on the fly     |
+| Use when                         | Rare updates, read-heavy analytics | Frequent upserts, CDC, streaming                |
 
 Ask the user whether the table has row-level mutations before defaulting; if it does, MoR + v2 is usually the right pick.
 
@@ -79,14 +80,15 @@ Without this the catalog grows unboundedly and old data files never get GC'd.
 
 The mapping resolver is URI-aware. Sub-scheme variants of the same storage are treated as equivalent:
 
-| Canonical scheme | Aliases | Example |
-|---|---|---|
-| `s3` | `s3a`, `s3n` | `s3://bucket/key` |
-| `hdfs` | `webhdfs` | `hdfs://nameservice/path` |
-| `abfs` | `abfss` | `abfs://container@account.dfs.core.windows.net/path` |
-| `gs` | — | `gs://bucket/key` |
-| `viewfs` | — (kept distinct from `hdfs`) | `viewfs://nameservice/path` |
-| `file` | bare paths (`/tmp/...`, `./data/...`) | `file:///tmp/x` |
+
+| Canonical scheme | Aliases                               | Example                                              |
+| ------------------ | --------------------------------------- | ------------------------------------------------------ |
+| `s3`             | `s3a`, `s3n`                          | `s3://bucket/key`                                    |
+| `hdfs`           | `webhdfs`                             | `hdfs://nameservice/path`                            |
+| `abfs`           | `abfss`                               | `abfs://container@account.dfs.core.windows.net/path` |
+| `gs`             | —                                    | `gs://bucket/key`                                    |
+| `viewfs`         | — (kept distinct from`hdfs`)         | `viewfs://nameservice/path`                          |
+| `file`           | bare paths (`/tmp/...`, `./data/...`) | `file:///tmp/x`                                      |
 
 A mapping entry `s3://bucket/users/*` matches paths in the code regardless of whether the code writes `s3://`, `s3a://`, or `s3n://`. The same is true for `hdfs`/`webhdfs` and `abfs`/`abfss`.
 
@@ -163,11 +165,12 @@ When a Spark write site uses `.partitionBy(...)` or `.bucketBy(N, ...)`, the det
 
 ### Supported transforms (MVP)
 
-| Spark API | Iceberg transform |
-|---|---|
-| `.partitionBy("col")` | `identity(col)` |
-| `.partitionBy("col1", "col2", ...)` | one `identity(col)` per arg |
-| `.bucketBy(N, "col1", "col2", ...)` | one `bucket(N, col)` per col arg |
+
+| Spark API                           | Iceberg transform               |
+| ------------------------------------- | --------------------------------- |
+| `.partitionBy("col")`               | `identity(col)`                 |
+| `.partitionBy("col1", "col2", ...)` | one`identity(col)` per arg      |
+| `.bucketBy(N, "col1", "col2", ...)` | one`bucket(N, col)` per col arg |
 
 Time-based transforms (`year`/`month`/`day`/`hour`) and `truncate(N, col)` are out of MVP scope — Spark uses these through `withColumn(...)` pre-pass + identity partitioning, which would require intra-method data flow.
 
@@ -242,12 +245,13 @@ spark.sql(sql)
 
 ### Detected patterns
 
-| Language | Pattern | Example |
-|---|---|---|
-| Python | `py_open` | `open("x.sql")` |
-| Python | `py_path_read_text` | `Path("x.sql").read_text()` |
-| Python | `py_pkgutil_get_data` | `pkgutil.get_data(__name__, "x.sql")` |
-| Java | `java_files_read` | `Files.readAllBytes(Path.of("x.sql"))` |
+
+| Language   | Pattern                | Example                                        |
+| ------------ | ------------------------ | ------------------------------------------------ |
+| Python     | `py_open`              | `open("x.sql")`                                |
+| Python     | `py_path_read_text`    | `Path("x.sql").read_text()`                    |
+| Python     | `py_pkgutil_get_data`  | `pkgutil.get_data(__name__, "x.sql")`          |
+| Java       | `java_files_read`      | `Files.readAllBytes(Path.of("x.sql"))`         |
 | Java/Scala | `java_resource_stream` | `getClass().getResourceAsStream("/sql/x.sql")` |
 
 ### What's parsed in the loaded SQL
@@ -316,11 +320,12 @@ Plus `iceberg-runbook/README.md` as a top-level index with a summary table of al
 
 ### Phases
 
-| Phase | Estimated runtime | Risk |
-|---|---|---|
-| 1: add_files | minutes | Low — reversible by dropping target table |
-| 2: rewrite_data_files | hours | Medium — resource-heavy, can be deferred |
-| 3: switchover | minutes | Coordinated cutover — requires consumer alignment |
+
+| Phase                 | Estimated runtime | Risk                                               |
+| ----------------------- | ------------------- | ---------------------------------------------------- |
+| 1: add_files          | minutes           | Low — reversible by dropping target table         |
+| 2: rewrite_data_files | hours             | Medium — resource-heavy, can be deferred          |
+| 3: switchover         | minutes           | Coordinated cutover — requires consumer alignment |
 
 ### Phase 3 options
 
@@ -404,6 +409,7 @@ ORDER BY _change_ordinal;
 `_change_type` values: `INSERT`, `DELETE`, `UPDATE_BEFORE`, `UPDATE_AFTER`. An update produces two rows (BEFORE + AFTER) with the same `_change_ordinal`. No diff query needed — Iceberg tracks this at the metadata layer.
 
 **Caveats:**
+
 - `MERGE` requires unique keys on the join condition; if `id` is not unique in the source you must dedupe in the `USING` subquery.
 - Comparing nullable columns with `<>` returns `NULL` (treated as false). Use `IS DISTINCT FROM` or `NVL`-pad to detect changes correctly.
 - `table.changes` is meaningful only AFTER the table is written via MERGE / append / overwrite from the source — it does not retro-fill history. Plan a one-time backfill if downstream needs historical change events.
@@ -433,16 +439,17 @@ ORDER BY _change_ordinal;
 
 The migrator (or the agent at audit time) should flag for review:
 
-| Signal | Likely pattern |
-|---|---|
-| SQL file named `*_inc.sql`, `*_diff*.sql`, `*_delta*.sql`, `*_changes*.sql` | Pattern 1 (increment via diff) |
-| `FULL OUTER JOIN ... ON .id = .id` between two filtered slices of the same table | Pattern 1 |
-| `LEFT JOIN ... WHERE rhs.id IS NULL` between two snapshots | Pattern 1 (insert detection half) |
-| `EXCEPT` / `MINUS` between filtered slices of the same source | Pattern 1 |
-| `WITH today AS (...), yesterday AS (...)` CTE structure | Pattern 1 |
-| Column named `is_deleted` / `deleted_at` / `tombstone` / `is_active`+`valid_to` | Pattern 2 |
-| Repeated full-partition `INSERT OVERWRITE TABLE t PARTITION (part_dt=...)` for the same partition | Pattern 3 |
-| Table name ending `_changelog` / `_cdc` / `_history` with a foreign key to the main table | Pattern 4 |
+
+| Signal                                                                                           | Likely pattern                    |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| SQL file named`*_inc.sql`, `*_diff*.sql`, `*_delta*.sql`, `*_changes*.sql`                       | Pattern 1 (increment via diff)    |
+| `FULL OUTER JOIN ... ON .id = .id` between two filtered slices of the same table                 | Pattern 1                         |
+| `LEFT JOIN ... WHERE rhs.id IS NULL` between two snapshots                                       | Pattern 1 (insert detection half) |
+| `EXCEPT` / `MINUS` between filtered slices of the same source                                    | Pattern 1                         |
+| `WITH today AS (...), yesterday AS (...)` CTE structure                                          | Pattern 1                         |
+| Column named`is_deleted` / `deleted_at` / `tombstone` / `is_active`+`valid_to`                   | Pattern 2                         |
+| Repeated full-partition`INSERT OVERWRITE TABLE t PARTITION (part_dt=...)` for the same partition | Pattern 3                         |
+| Table name ending`_changelog` / `_cdc` / `_history` with a foreign key to the main table         | Pattern 4                         |
 
 These are **signals**, not rules. A `_inc.sql` may legitimately compute a metric increment, not a row-level diff. Surface the finding to the user and confirm intent before proposing the rewrite.
 

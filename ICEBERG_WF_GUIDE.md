@@ -426,6 +426,41 @@ CALL spark_catalog.system.remove_orphan_files(
 
 ---
 
+## SCD2-таблицы и Iceberg: загрузку НЕ переписывать
+
+Таблицы с версионированием записей (`ctl_validfrom`/`ctl_validto`, партиция по `part_ctl_validfrom`) переводятся на Iceberg **без изменения загрузки**: `INSERT`/append работает на Iceberg-таблице (включая MoR) без единой правки. Режим MoR/CoW влияет только на то, как материализуются UPDATE/DELETE/MERGE, — он не требует, чтобы загрузка использовала MERGE.
+
+**Однопроходный MERGE для SCD2 невозможен в принципе.**
+
+```sql
+-- ЛОМАНЫЙ АНТИПАТТЕРН — не использовать никогда
+MERGE INTO tgt USING src
+ON tgt.bk = src.bk AND tgt.ctl_validto IS NULL
+WHEN MATCHED THEN UPDATE SET ctl_validto = current_timestamp   -- старая версия закрыта…
+WHEN NOT MATCHED THEN INSERT ...                               -- …а новая для ЭТОГО ключа не вставится никогда: ключ уже MATCHED
+```
+
+Ветки MATCHED и NOT MATCHED взаимоисключающи, поэтому «закрыть старую версию И вставить новую» одним MERGE нельзя — у всех совпавших ключей теряется текущее состояние. Сопутствующая типовая ошибка — `src.current_timestamp()` (функция как «метод» алиаса): невалидный Spark SQL; всегда голое `current_timestamp`.
+
+**Если пользователь явно попросил закрывать версии** (отдельное решение, зафиксированное в интервью) — только двухшаговый паттерн:
+
+```sql
+-- Шаг 1: закрыть текущие версии ключей, пришедших в этой загрузке
+MERGE INTO <schema>.<tgt> AS tgt
+USING (SELECT DISTINCT <bk1>, <bk2> FROM <источник_загрузки>) AS s
+ON tgt.<bk1> = s.<bk1> AND tgt.<bk2> = s.<bk2> AND tgt.ctl_validto IS NULL
+WHEN MATCHED THEN UPDATE SET tgt.ctl_validto = current_timestamp;
+
+-- Шаг 2: вставить новые версии — прежний INSERT/append без изменений
+INSERT INTO <schema>.<tgt>
+SELECT ..., current_timestamp AS ctl_validfrom, CAST(NULL AS TIMESTAMP) AS ctl_validto, ...
+FROM <источник_загрузки>;
+```
+
+По умолчанию (пользователь закрытия версий не просил) загрузка остаётся как есть.
+
+---
+
 ## Частота запуска compaction
 
 | Таблица | Cron | Пояснение |
@@ -485,6 +520,8 @@ ls -la src/main/resources/sql/dml/ | grep -i <table_name>
 This is the canonical DDL property block the skill points at (its DDL step and its TBLPROPERTIES-completeness probe). Every migrated table's DDL uses the full block (11 properties); the reference table under it explains how to source each value — pasting one fixed value across all tables is the mistake it prevents.
 
 Generate / regenerate the DDL from `s2t.xlsx` per S2T_GUIDE "Контрольный список перед запуском" (the DDL generator step that turns S2T into `src/main/resources/sql/ddl/<layer>/<table>.sql`), then change `STORED AS PARQUET` → `USING iceberg`:
+
+**Перенос партиционной колонки (Hive → Iceberg) — обязательный шаг.** В Hive-DDL партколонка объявлена только внутри `partitioned by (col TYPE comment …)` и отсутствует в списке колонок таблицы. В Iceberg она обязана быть В СПИСКЕ КОЛОНОК: перенеси её туда последней (то же имя, тип AS-IS, тот же comment), а в `PARTITIONED BY (col)` оставь голое имя без типа. Если `PARTITIONED BY` ссылается на колонку, которой нет в списке колонок, `CREATE TABLE` падает — это самая частая ошибка конверсии.
 
 ```sql
 CREATE TABLE {{datamart_name}}.<table> (
